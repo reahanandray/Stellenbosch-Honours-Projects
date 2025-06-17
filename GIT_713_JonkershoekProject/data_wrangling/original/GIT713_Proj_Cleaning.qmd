@@ -1,0 +1,756 @@
+---
+title: "GIT713_Proj_Cleaning"
+author: "25950495"
+format: html
+editor: visual
+---
+
+# Setup
+
+## Libraries
+
+Adding required libraries for processing and analysis.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+```
+
+## Importing Data
+
+Reading in the original fire occurrence data and weather station data.
+
+```{r}
+# Weather Station data from 2021-2024
+swartbos_data <- read.csv(
+  "C:/Users/25950495/Desktop/GIT713/Project/Cleaning/CSV_Files/swartbos_data.csv",
+  sep = ";"
+  )
+elsenburg_data <- read.csv(
+  "C:/Users/25950495/Desktop/GIT713/Project/Cleaning/CSV_Files/elsenburg_data.csv",
+  sep = ","
+  )
+
+# Fire Observations by different sensors
+j1v_data <- read.csv(
+  "C:/Users/25950495/Desktop/GIT713/Project/Cleaning/CSV_Files/j1v_data.csv",
+  sep = ";"
+  )
+j2v_data <- read.csv(
+  "C:/Users/25950495/Desktop/GIT713/Project/Cleaning/CSV_Files/j2v_data.csv",
+  sep = ";"
+  )
+m_data <- read.csv(
+  "C:/Users/25950495/Desktop/GIT713/Project/Cleaning/CSV_Files/m_data.csv",
+  sep = ";"
+  )
+sv_data <- read.csv(
+  "C:/Users/25950495/Desktop/GIT713/Project/Cleaning/CSV_Files/sv_data.csv",
+  sep = ";"
+  )
+```
+
+# Cleaning
+
+## Fire Data
+
+Combining data from different sensors into one dataset
+
+```{r}
+j1v_data$TYPE <- NULL
+sv_data$TYPE <- NULL
+m_data$TYPE <- NULL
+
+# merge the datasets into new variable
+firedata <- rbind(j1v_data, j2v_data, m_data, sv_data) |>
+  # remove unnecessary columns from dataset
+  select(-c(2, 6:7, 12:15, 17:18, 20:21, 23, 25:28)) |>
+  # change data types to numeric and date to permit analysis
+  mutate(
+    LATITUDE = as.numeric(gsub(",", ".", LATITUDE)),
+    LONGITUDE = as.numeric(gsub(",", ".", LONGITUDE)),
+    ACQ_DATE = as.Date(ACQ_DATE, format = "%Y-%m-%d %H:%M:%S"),
+    BRIGHTNESS = as.numeric(gsub(",", ".", BRIGHTNESS)),
+    MeanElevation = as.numeric(gsub(",", ".", MeanElevation)),
+    MeanSlope = as.numeric(gsub(",", ".", MeanSlope)),
+    MeanAspect = as.numeric(gsub(",", ".", MeanAspect))
+    ) |>
+  # sort the data in ascending order by date and time of capture
+  arrange(ACQ_DATE, ACQ_TIME)
+
+# change column names to be more readable
+colnames(firedata) <- c('object_id', 'latitude', 'longitude', 'brightness',
+                        'date_of_fire', 'time_of_fire', 'satellite', 'instrument',
+                        'daynight','mean_elevation','mean_slope', 'mean_aspect')
+  
+# view the first ten rows of the new dataset
+head(firedata, 10)
+  
+# remove seperate datasets from memory
+rm(j1v_data, j2v_data, m_data, sv_data)
+```
+
+## Weather Data
+
+```{r}
+# function to determine whether a year is a leap year
+is_leap_yr <- function(year) {
+  (year %% 4 == 0 & year %% 100 != 0) | (year %% 400 == 0)
+}
+
+elsenburg_data |>
+  select(LogDate, MinTemp, MaxTemp, Windspeed, Rainfall, Humidity) |>
+  mutate(
+    LogDate = as.Date(LogDate, format = "%Y-%m-%dT%H:%M:%S")
+  ) -> elsenburg_data
+
+colnames(elsenburg_data) <- c('date_of_fire', 'min_temp', 'max_temp', 
+                             'avg_windspeed', 'rain', 'avg_hum')
+
+# rename columns for easier understanding
+colnames(swartbos_data) <- c('year', 'month', 'day','max_temp', 'min_temp',
+                             'max_hum','min_hum', 'avg_windspeed', 'rain')
+  
+swartbos_data |>
+  # remove "extra" days from the table
+  mutate(
+    max_day = case_when(
+      month %in% c(1, 3, 5, 7, 8, 10, 12) ~ 31,
+      month %in% c(4, 6, 9, 11) ~ 30,
+      month == 2 & is_leap_yr(year) ~ 29,
+      month == 2 ~ 28,
+      TRUE ~ NA_real_),
+    max_temp = as.numeric(gsub(",", ".", max_temp)),
+    min_temp = as.numeric(gsub(",", ".", min_temp)),
+    max_hum = as.numeric(gsub(",", ".", max_hum)),
+    min_hum = as.numeric(gsub(",", ".", min_hum)),
+    avg_hum = (min_hum + max_hum) / 2,
+    avg_windspeed = as.numeric(gsub(",", ".", avg_windspeed)),
+    rain = as.numeric(gsub(",", ".", rain))
+    ) |>
+  filter(day <= max_day) |>
+  select(-max_day) |>
+  na.omit() |>
+  # Create a new date column and remove the seperate year, month, and day
+  mutate(
+    date_of_fire = as.Date(paste(year, month, day, sep = "-"), 
+                           format = "%Y-%m-%d")
+  ) |>
+  # move the new date column to the beginning
+  relocate(date_of_fire, .before = year) |>
+  select(-c(2:4, 7:8)) |>
+  filter(date_of_fire > '2014-12-31') -> swartbos_data
+  
+
+weatherdata <- bind_rows(swartbos_data, elsenburg_data) |>
+  arrange(date_of_fire)
+
+head(weatherdata, 10)
+```
+
+# Merging Data
+
+```{r}
+final_data <- firedata |>
+  left_join(
+    weatherdata,
+    join_by(date_of_fire),
+    relationship = "many-to-many") |>
+  relocate(date_of_fire, .before = latitude) |>
+  mutate(
+    avg_temp = (min_temp + max_temp) / 2
+  ) |>
+  select(-c(1, 5, 13:14)) -> final_data
+
+head(final_data, 10)
+```
+
+Export data
+
+```{r}
+write.csv(final_data, "final_data.csv")
+```
+
+# Quality Report
+
+## Summary Tables
+
+```{r}
+summary(final_data)
+```
+
+### Cardinality
+
+Time of fire
+
+```{r}
+length(unique(final_data$time_of_fire))
+```
+
+Mean Elevation
+
+```{r}
+length(unique(final_data$mean_elevation))
+```
+
+Mean Slope
+
+```{r}
+length(unique(final_data$mean_slope))
+```
+
+Mean Aspect
+
+```{r}
+length(unique(final_data$mean_aspect))
+```
+
+Average Windspeed
+
+```{r}
+length(unique(final_data$avg_windspeed))
+```
+
+Rain
+
+```{r}
+length(unique(final_data$rain))
+```
+
+Average Humidity
+
+```{r}
+length(unique(final_data$avg_hum))
+```
+
+Average Temperature
+
+```{r}
+length(unique(final_data$avg_temp))
+```
+
+### Mode
+
+Time of Fire
+
+```{r}
+sort(table(final_data$time_of_fire), decreasing = TRUE)[1:5]
+```
+
+Mean Elevation
+
+```{r}
+sort(table(final_data$mean_elevation), decreasing = TRUE)[1:5]
+```
+
+Mean Slope
+
+```{r}
+sort(table(final_data$mean_slope), decreasing = TRUE)[1:10]
+```
+
+Mean Aspect
+
+```{r}
+sort(table(final_data$mean_aspect), decreasing = TRUE)[1:9]
+```
+
+Average Windspeed
+
+```{r}
+sort(table(final_data$avg_windspeed), decreasing = TRUE)[1:5]
+```
+
+Rain
+
+```{r}
+sort(table(final_data$rain), decreasing = TRUE)[1:5]
+```
+
+Average Humidity
+
+```{r}
+sort(table(final_data$avg_hum), decreasing = TRUE)[1:5]
+```
+
+Average Temperature
+
+```{r}
+sort(table(final_data$avg_temp), decreasing = TRUE)[1:5]
+```
+
+Instrument
+
+```{r}
+sort(table(final_data$instrument), decreasing = TRUE)[1:2]
+```
+
+Satellite
+
+```{r}
+sort(table(final_data$satellite), decreasing = TRUE)[1:5]
+```
+
+Daynight
+
+```{r}
+sort(table(final_data$daynight), decreasing = TRUE)[1:2]
+```
+
+### Standard Deviation
+
+```{r}
+print('Time of Fire')
+sd(final_data$time_of_fire)
+
+print('Mean Elevation')
+sd(final_data$mean_elevation)
+
+print('Mean Slope')
+sd(final_data$mean_slope)
+       
+print('Mean Aspect')
+sd(final_data$mean_aspect)
+
+print('Average Windspeed')
+sd(final_data$avg_windspeed)
+
+print('Rain')
+sd(final_data$rain)
+       
+print('Avg Humidity')
+sd(final_data$avg_hum)
+
+print('Average Temperature')
+sd(final_data$avg_temp)
+```
+
+For date of fire
+
+```{r}
+# Example: assume your data frame is called `df` and the column is `fire_date`
+
+# Step 1: Convert the dates to numeric (days since 1970-01-01)
+numeric_dates <- as.numeric(final_data$date_of_fire)
+
+# Step 2: Calculate the standard deviation
+std_dev_days <- sd(numeric_dates, na.rm = TRUE)
+
+# Step 3 (optional): You might want the result in days or even weeks
+  
+std_dev_weeks <- std_dev_days / 7
+std_dev_months <- std_dev_days / 30.44   # average days per month
+std_dev_years  <- std_dev_days / 365.25  # average days per year (accounts for leap years)
+
+std_dev_days # Standard deviation in days
+std_dev_weeks
+std_dev_months
+std_dev_years
+```
+
+## Histograms
+
+### Continuous Variables
+
+Date of Fire
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = date_of_fire)
+) + 
+  geom_histogram(
+    #binwidth = 30
+  ) +
+  labs(
+    title = "Histogram of 'Date of Fire'",
+    subtitle = 'Continuous Date Variable',
+    x = 'Date of Fire',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Time of Fire
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = time_of_fire)
+) + 
+  geom_histogram(
+    binwidth = 60
+  ) +
+  labs(
+    title = "Histogram of 'Time of Fire'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Time of Fire',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Mean Elevation
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = mean_elevation)
+) + 
+  geom_histogram(
+    binwidth = 30
+  ) +
+  labs(
+    title = "Histogram of 'Mean Elevation'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Mean Elevation',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Mean Slope
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = mean_slope)
+) + 
+  geom_histogram(
+    binwidth = 5
+  ) +
+  labs(
+    title = "Histogram of 'Mean Slope'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Mean Slope',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Mean Aspect
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = mean_aspect)
+) + 
+  geom_histogram(
+    binwidth = 15
+  ) +
+  labs(
+    title = "Histogram of 'Mean Aspect'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Mean Aspect',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Average Windspeed
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = avg_windspeed)
+) + 
+  geom_histogram(
+    binwidth = .5
+  ) +
+  labs(
+    title = "Histogram of 'Average Windspeed'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Average Windspeed',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Rain
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = rain)
+) + 
+  geom_histogram(
+    binwidth = .5
+  ) +
+  labs(
+    title = "Histogram of 'Rain'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Rain',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Average Humidity
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = avg_hum)
+) + 
+  geom_histogram(
+    binwidth = 5
+  ) +
+  labs(
+    title = "Histogram of 'Average Humidity'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Average Humidity',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Average Temperature
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = avg_temp,
+      fill = avg_temp)
+) + 
+  geom_histogram(
+    binwidth = 2.5,
+  ) +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  labs(
+    title = "Histogram of 'Average Temperature'",
+    subtitle = 'Continuous Integer Variable',
+    x = 'Average Temperature',
+    y = 'Count'
+  )
+```
+
+### Categorical Variables
+
+Satellite
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = satellite)
+) + 
+  geom_bar() +
+  labs(
+    title = "Histogram of 'Satellite'",
+    subtitle = 'Categorical String Variable',
+    x = 'Satellite',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Instrument
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = instrument)
+) + 
+  geom_bar() +
+  labs(
+    title = "Histogram of 'Instrument'",
+    subtitle = 'Categorical String Variable',
+    x = 'Instrument',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+Day Night
+
+```{r}
+ggplot(
+  final_data,
+  aes(x = daynight)
+) + 
+  geom_bar() +
+  labs(
+    title = "Histogram of 'DayNight'",
+    subtitle = 'Categorical String Variable',
+    x = 'Day or Night',
+    y = 'Count'
+  ) + 
+  theme_minimal()
+```
+
+# Visualisation
+
+Fire count by satellite
+
+```{r}
+ggplot(final_data, aes(x = satellite, color = satellite, fill = satellite)) +
+  geom_bar() +
+  labs(
+    title = "Count of fire occurances by Satellite",
+    x = 'Satellite',
+    y = 'Count'
+  ) +
+  theme_minimal()
+```
+
+Fire occurances over time
+
+```{r}
+ggplot(final_data, aes(x = date_of_fire)) + 
+  geom_density(fill = "red") + 
+  labs(
+    title = 'Density plot of Fire Occurances',
+    subtitle = 'Over the entire study period',
+    x = 'Date',
+    y = 'Density'
+  ) + 
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  theme_minimal()
+```
+
+Fire occurances over a year
+
+```{r}
+ggplot(
+  final_data, 
+  aes(
+    x = format(as.Date(date_of_fire), "%m"),
+    color = format(as.Date(date_of_fire), "%Y"),
+    fill = format(as.Date(date_of_fire), "%Y")
+    )
+  ) + 
+  geom_density(alpha = 0.2) + 
+  labs(
+    title = 'Density plot of Fire Occurances',
+    subtitle = 'Over the entire study period',
+    x = 'Months',
+    y = 'Density',
+    color = 'Year',
+    fill = 'Year'
+  ) +
+  theme_minimal()
+```
+
+Day vs Night Observations
+
+```{r}
+ggplot(
+  final_data,
+  aes(
+    x = daynight,
+    color = daynight,
+    fill = daynight
+  )
+) +
+  geom_bar() +
+  labs(
+    title = 'Day vs Night Observations',
+    subtitle = 'Over the entire study period',
+    x = 'Day or Night',
+    y = 'Count'
+  ) + 
+  theme_bw()
+```
+
+Rainfall over the year
+
+```{r}
+ggplot() +
+  geom_bar(weatherdata, mapping = aes(x = date_of_fire, y = rain), fill = "grey",
+           stat = "identity", width = 28) +
+  geom_line(weatherdata, mapping = aes(x = date_of_fire, y = (max_temp + min_temp) / 2), col = "blue") +
+  scale_x_continuous(breaks = c(365/12, 365/12*4, 365/12*8, 365) - 15, 
+                     labels = c("Jan", "Apr", "Aug", "Dec"),
+                     name = "") +
+  scale_y_continuous(name = "") +
+ # facet_wrap(~format(date_of_fire,"%Y")) +
+  theme_bw()
+```
+
+Distribution of average temperature
+
+```{r}
+ggplot(
+  final_data,
+  aes(
+    x = avg_temp,
+  )
+) +
+  geom_density(
+    fill = "darkturquoise",
+    color = "darkturquoise"
+    ) +
+  scale_x_continuous(
+    name = "Average Temperature (C)", 
+    limits = c(10, 50), 
+    breaks = seq(10, 50, 5)
+    ) +
+  scale_y_continuous(
+    name = "Density", 
+    limits = c(0, 0.3), 
+    breaks = seq(0, 0.3, 0.05)
+  ) +
+  labs(
+    title = "Distribution of 'Average Temperature'",
+    subtitle = "Over the study period",
+  ) +
+  theme_minimal()
+```
+
+Aspect
+
+```{r}
+# Categorise aspect degrees into cardinal directions
+# Define function
+categorise_aspect <- function(mean_aspect) {
+  case_when(
+    is.na(mean_aspect) ~ NA_character_,
+    mean_aspect >= 337.5 | mean_aspect < 22.5 ~ "N",
+    mean_aspect >= 22.5 & mean_aspect < 67.5 ~ "NE",
+    mean_aspect >= 67.5 & mean_aspect < 112.5 ~ "E",
+    mean_aspect >= 112.5 & mean_aspect < 157.5 ~ "SE",
+    mean_aspect >= 157.5 & mean_aspect < 202.5 ~ "S",
+    mean_aspect >= 202.5 & mean_aspect < 247.5 ~ "SW",
+    mean_aspect >= 247.5 & mean_aspect < 292.5 ~ "W",
+    mean_aspect >= 292.5 & mean_aspect < 337.5 ~ "NW"
+  )
+}
+
+# Apply to data frame
+aspect_vis <- final_data |>
+  mutate(aspect_dir = categorise_aspect(mean_aspect))
+
+# Summarise counts and percentages by direction
+aspect_summary <- aspect_vis |>
+  count(aspect_dir) |>
+  filter(!is.na(aspect_dir)) |>
+  mutate(perc = n / sum(n),
+         label = paste0(round(perc * 100, 1), "%"),
+         dir_label = paste0(aspect_dir, ": ", label))
+
+# Set correct compass order
+aspect_summary$aspect_dir <- factor(
+  aspect_summary$aspect_dir,
+  levels = c("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+)
+
+# Polar bar chart (rose diagram)
+polar_plot <- ggplot(aspect_summary, aes(x = aspect_dir, y = perc)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_polar(start = -pi/8) +  # North at top
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Aspect Distribution (North at Top)", x = "", y = "") +
+  theme_minimal()
+
+# Table-style plot of direction + percentages
+table_plot <- ggplot(aspect_summary, aes(x = aspect_dir, y = 1, label = dir_label)) +
+  geom_text(size = 4) +
+  labs(title = "Direction Breakdown") +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# ---- 5. Combine polar plot and table using patchwork ----
+(polar_plot / table_plot) + plot_layout(heights = c(3, 1))
+```
