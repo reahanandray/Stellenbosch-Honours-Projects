@@ -1,9 +1,11 @@
-# Unsupervised Classification and Change Detection of Flooding in South Africa
+
+
+# Wilfire Prediction Model and Fire Danger Index Mapping in Jonkershoek Nature Reserve
 
 ---
 
 ## Overview
-This project focuses on detecting the presence and assessing the impact of flooding in the KwaZulu-Natal province during the natural disaster that occurred between 11–15 April 2022. The analysis uses four remote sensing indices—NDMI, NDWI, SMI, and NDVI—to evaluate changes in vegetation moisture, surface water, soil moisture, and vegetation health, respectively. The objective is to create a monthly time series for the year 2022, enabling clustering of index responses before and after the flood event using unsupervised classification (k-means). This approach allows for effective change detection and comparison of pre- and post-event conditions across all indices. This repository provides all project deliverables, from initial scope planning to final results, including source data, analysis scripts, reports, and presentation material.
+This project focuses on identifying the main factors that affect wildfire risk in the Jonkershoek Nature Reserve in Stellenbosch. The factors that will be analysed include topography, vegetation, and weather data. The objectives include identifying the most influencial risk factors, using the factors as predictors to develop a fire prediction model that outputs a Fire Danger Index, and assessing these factors over time to better understand trends in wildfire risk. This repository provides all the project deliverables, from initial scope planning to final results, including source data, analysis scripts, reports, and presentation material.
 
 ## Tools Used
 - `Python`: Used for calculating the Fire Danger Index (FDI), building the fire prediction model, and creating visualisations.
