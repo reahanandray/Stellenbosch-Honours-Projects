@@ -1,0 +1,10 @@
+# Unsupervised Classification and Change Detection of Flooding in South Africa
+
+---
+
+## Overview
+This project focuses on detecting the presence and assessing the impact of flooding in the KwaZulu-Natal province during the natural disaster that occurred between 11–15 April 2022. The analysis uses four remote sensing indices—NDMI, NDWI, SMI, and NDVI—to evaluate changes in vegetation moisture, surface water, soil moisture, and vegetation health, respectively. The objective is to create a monthly time series for the year 2022, enabling clustering of index responses before and after the flood event using unsupervised classification (k-means). This approach allows for effective change detection and comparison of pre- and post-event conditions across all indices. This repository provides all project deliverables, from initial scope planning to final results, including source data, analysis scripts, reports, and presentation material.
+
+## Tools Used
+- `Python`: Used for calculating the Fire Danger Index (FDI), building the fire prediction model, and creating visualisations.
+- `R`: Used for data wrangling, preprocessing, and exploratory data analysis.
